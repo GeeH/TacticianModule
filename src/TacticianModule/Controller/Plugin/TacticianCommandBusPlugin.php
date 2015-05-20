@@ -7,12 +7,11 @@
 
 namespace TacticianModule\Controller\Plugin;
 
-use League\Tactician\CommandBus\CommandBus;
+use League\Tactician\CommandBus;
 use Zend\Mvc\Controller\Plugin\AbstractPlugin;
 
 class TacticianCommandBusPlugin extends AbstractPlugin
 {
-
     /**
      * @var CommandBus
      */
@@ -23,8 +22,12 @@ class TacticianCommandBusPlugin extends AbstractPlugin
         $this->commandBus = $commandBus;
     }
 
-    public function __invoke()
+    public function __invoke($command = null)
     {
-        return $this->commandBus;
+        if (! $command) {
+            return $this->commandBus;
+        }
+        
+        return $this->commandBus->handle($command);
     }
 }

@@ -1,5 +1,3 @@
-> Please note this is not even close to being released, as this version was simply a rapid prototype on an old version of Tactician (a stable release didn't exist at that point). DO NOT USE!
-
 # Tactician ZF2 Module
 ## Wrapper module for easy use of the [Tactician](http://tactician.thephpleague.com/) Command Bus in your ZF2 applications.
 
@@ -7,23 +5,48 @@
 
 The module presents a __Controller Plugin__ called `tacticianCommandBus()` for easy use of dispatching commands. 
  
-```
-class MyController extends AbstractActionController
+```php
+
+// real life example
+// imports skipped for brevity
+
+class LoginController extends AbstractActionController
 {
+    /** @var LoginForm */
+    protected $form;
+
+    // constructor code skipped for brevity
+
     public function indexAction()
     {
-        $command = new UserLoginCommand();
-        $this->tacticianCommandBus()->execute($command);
+        if ($this->request->isPost()) {
+            $this->form->setData($this->request->getPost());
+            if ($this->form->isValid()) {
+                $command = new UserLoggedCommand();
+                $command->login = $this->form->getLogin();
+                $command->password = $this->form->getPassword();
+                
+                $this->tacticianCommandBus($command);
+                return $this->redirect()->toRoute('home');
+            }
+        }
+    
+        $view = new ViewModel();
+        $view->setVariable('form', $this->form);
+        $view->setTemplate('app/login/index');
+        
+        return $view;
     }
 }
 ```
 
-If you need to inject the command bus into your service layer or similar, then simply grab from the __Service Manager__ using the FQCN of the `HandlerExecutionCommandBus`.
+If you need to inject the command bus into your service layer or similar, then simply grab from the __Service Manager__ using the FQCN of the `CommandBus`.
 
-```
+```php
+<?php
 namespace MyNamespace;
 
-use League\Tactician\CommandBus\HandlerExecutionCommandBus;
+use League\Tactician\CommandBus;
 use Zend\ServiceManager\ServiceManager;
 use MyNamespace\Service\MyService;
 
@@ -34,7 +57,7 @@ class Module.php
         return [
             'factories' => [
                 MyService::class => function(ServiceManager $serviceManager) {
-                    $commandBus = $serviceManager->get(HandlerExecutionCommandBus::class);
+                    $commandBus = $serviceManager->get(CommandBus::class);
                     return new MyService($commandBus);
                 },
             ],
@@ -45,30 +68,33 @@ class Module.php
 
 ### Configuring
 
-The module ships with a `InMemoryLocator` and a `HandlerExecutionCommandBus` configured as default. If you wish to override the default locator or default command bus implementations, then simply use the `tactician` key in the merged config.
+The module ships with a `ZendLocator` and a `CommandHandlerMiddleware` and a `HandlerInflector` configured as default. If you wish to override the default locator or default command bus implementations, then simply use the `tactician` key in the merged config.
 
-```
+```php
 'tactician' => [
-    'default-locator' => InMemoryLocator::class,
-    'default-command-bus' => HandlerExecutionCommandBus::class,
-    'commandbus-handlers' => [],
+    'default-extractor'  => ClassNameExtractor::class,
+    'default-locator'    => ZendLocator::class,
+    'default-inflector'  => HandleInflector::class,
+    'handler-map'        => [],
+    'middleware'         => [
+        CommandHandlerMiddleware::class => 0,
+    ],
 ],
 ```
 
-The `default-locator` key tells the module which locator to use as default (it's a service manager key). The `default-command-bus` key tells the module which command bus to use by default (it's also a service manager key). You can overwrite these in any module that is loaded after the `TacticianModule` (ie. comes __after__ `TacticianModule` in `application.config.php`).
+`default-extractor`, `default-locator` and `default-inflector` are service manager keys to registered services.
 
-The `commandbus-handlers` is a key/value pair array of commands to handlers that are registered via the default locator. These handlers are automatically registered in the locator factory. So if you wanted to register your own `UserLoginCommandHandler` to handle `UserLoginCommand`s in your own `module.config.php`:
+`ZendLocator` expects handlers in the `handler-map` to be `commandName => serviceManagerKey` or `commandName => Handler_FQCN`, altough to prevent additional costly checks, use serviceManagerKey and make sure it is available as a Zend Service.
 
-```
-return [
+To add custom middleware to the middleware stack, add it to the `middleware` array as `ServiceName` => `priority` in which the middleware are supposed to be executed (higher the number, earlier it will execute). For example
 
-    ... other configuration here
-    
-    'tactician' => [
-        'commandbus-handlers' => [
-            UserLoginCommand::class => UserLoginCommandHandler::class
-        ]
+```php
+// ... your module config
+'tactician' => [
+    'middleware'         => [
+        YourCustomMiddleware::class  => -100, // execute last
+        YourAnotherMiddleware::class => 100, // execute early
     ],
-];
+],
 ```
 
